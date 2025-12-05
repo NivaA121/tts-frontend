@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import Auth from "./Auth";
 import { supabase } from "./supabase";
@@ -18,6 +18,31 @@ export default function App() {
 
   const MAX_CHARS = 500;
 
+  // ------------------------------------------------------
+  // 🔥 NEW: Restore user session when app loads (CRITICAL)
+  // ------------------------------------------------------
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) {
+        console.log("Restored session:", data.session.user);
+        setUser(data.session.user);
+      }
+    });
+
+    // Auto-listen for login/logout changes
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log("Auth event:", event);
+        console.log("Auth session:", session?.user);
+        setUser(session?.user || null);
+      }
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
   // --- HANDLERS ---
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -29,6 +54,14 @@ export default function App() {
     if (text.length > MAX_CHARS)
       return setError(`Maximum ${MAX_CHARS} characters allowed.`);
 
+    if (!user || !user.id) {
+      return setError("User not logged in. Please login again.");
+    }
+
+    // Debug logs
+    console.log("User from frontend:", user);
+    console.log("User ID sent to backend:", user.id);
+
     setError("");
     setSuccess("");
     setLoading(true);
@@ -36,15 +69,17 @@ export default function App() {
 
     try {
       const res = await axios.post(
-  `${import.meta.env.VITE_BACKEND_URL}/api/convert`, {
-  text,
-  user_id: user.id,
-});
-
+        `${import.meta.env.VITE_BACKEND_URL}/api/convert`,
+        {
+          text,
+          user_id: user.id,
+        }
+      );
 
       setAudioUrl(res.data.audioUrl);
       setSuccess("Audio generated successfully!");
     } catch (err) {
+      console.error("Frontend Error:", err.response?.data || err);
       setError("Error generating audio.");
     }
 
@@ -63,7 +98,6 @@ export default function App() {
   // --- MAIN UI ---
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center py-12 px-4 relative">
-
       {/* Logout */}
       <button
         onClick={handleLogout}
@@ -85,7 +119,6 @@ export default function App() {
       </h1>
 
       <div className="w-full max-w-3xl bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-lg">
-
         <textarea
           className="w-full h-48 p-4 text-black rounded-lg"
           placeholder="Enter text..."
@@ -93,7 +126,9 @@ export default function App() {
           onChange={(e) => setText(e.target.value)}
         ></textarea>
 
-        <p className="text-gray-400 mt-2">{text.length}/{MAX_CHARS}</p>
+        <p className="text-gray-400 mt-2">
+          {text.length}/{MAX_CHARS}
+        </p>
 
         <button
           onClick={handleConvert}
