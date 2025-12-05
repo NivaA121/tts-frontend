@@ -1,3 +1,5 @@
+
+
 import { useState, useEffect } from "react";
 import axios from "axios";
 import Auth from "./Auth";
@@ -5,6 +7,7 @@ import { supabase } from "./supabase";
 import History from "./History";
 
 export default function App() {
+  // --- ALWAYS PUT ALL HOOKS AT TOP ---
   const [user, setUser] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -13,167 +16,152 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [audioError, setAudioError] = useState(false);
 
   const MAX_CHARS = 500;
 
-  // Restore session
+  // ------------------------------------------------------
+  // 🔥 NEW: Restore user session when app loads (CRITICAL)
+  // ------------------------------------------------------
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data?.session?.user) setUser(data.session.user);
+      if (data?.session?.user) {
+        console.log("Restored session:", data.session.user);
+        setUser(data.session.user);
+      }
     });
 
+    // Auto-listen for login/logout changes
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (event, session) => setUser(session?.user || null)
+      (event, session) => {
+        console.log("Auth event:", event);
+        console.log("Auth session:", session?.user);
+        setUser(session?.user || null);
+      }
     );
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
+  // --- HANDLERS ---
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
   };
 
   const handleConvert = async () => {
-    if (!text.trim()) return toast("Please enter text.", "error");
+    if (!text.trim()) return setError("Please enter text.");
     if (text.length > MAX_CHARS)
-      return toast(`Max ${MAX_CHARS} characters allowed.`, "error");
+      return setError(`Maximum ${MAX_CHARS} characters allowed.`);
 
-    if (!user?.id) return toast("User not logged in.", "error");
+    if (!user || !user.id) {
+      return setError("User not logged in. Please login again.");
+    }
 
+    // Debug logs
+    console.log("User from frontend:", user);
+    console.log("User ID sent to backend:", user.id);
+
+    setError("");
+    setSuccess("");
     setLoading(true);
     setAudioUrl("");
 
     try {
       const res = await axios.post(
         `${import.meta.env.VITE_BACKEND_URL}/api/convert`,
-        { text, user_id: user.id }
+        {
+          text,
+          user_id: user.id,
+        }
       );
 
       setAudioUrl(res.data.audioUrl);
-      toast("Audio generated successfully!", "success");
+      setSuccess("Audio generated successfully!");
     } catch (err) {
-      toast("Error generating audio.", "error");
+      console.error("Frontend Error:", err.response?.data || err);
+      setError("Error generating audio.");
     }
 
     setLoading(false);
   };
 
-  // Mini toast function
-  const toast = (msg, type) => {
-    if (type === "error") setError(msg);
-    if (type === "success") setSuccess(msg);
+  // --- CONDITIONAL UI AFTER HOOKS ---
+  if (!user) {
+    return <Auth onLogin={(u) => setUser(u)} />;
+  }
 
-    setTimeout(() => {
-      setError("");
-      setSuccess("");
-    }, 2500);
-  };
+  if (showHistory) {
+    return <History user={user} onBack={() => setShowHistory(false)} />;
+  }
 
-  if (!user) return <Auth onLogin={(u) => setUser(u)} />;
-  if (showHistory) return <History user={user} onBack={() => setShowHistory(false)} />;
-
+  // --- MAIN UI ---
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-black via-gray-900 to-blue-950 text-white relative overflow-hidden">
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center py-12 px-4 relative">
+      {/* Logout */}
+      <button
+        onClick={handleLogout}
+        className="absolute top-6 right-6 bg-red-600 px-4 py-2 rounded-md hover:bg-red-700"
+      >
+        Logout
+      </button>
 
-      {/* Background glowing orbs */}
-      <div className="absolute top-20 left-20 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-20 right-20 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl"></div>
+      {/* History */}
+      <button
+        onClick={() => setShowHistory(true)}
+        className="absolute top-6 left-6 bg-green-600 px-4 py-2 rounded-md hover:bg-green-700"
+      >
+        History
+      </button>
 
-      {/* Premium Floating Navbar */}
-      <nav className="w-full flex items-center justify-between px-10 py-5 backdrop-blur-xl bg-white/5 border-b border-white/10 sticky top-0 z-50">
-        <h1 className="text-2xl font-semibold tracking-wide flex items-center gap-2">
-          🔊 <span>VoiceFlow AI</span>
-        </h1>
+      <h1 className="text-4xl font-bold mb-8">
+        Text to Speech <span className="text-blue-400">Converter</span>
+      </h1>
 
-        <div className="flex gap-4">
-          <button
-            onClick={() => setShowHistory(true)}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition border border-white/10"
-          >
-            History
-          </button>
+      <div className="w-full max-w-3xl bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-lg">
+        <textarea
+          className="w-full h-48 p-4 text-black rounded-lg"
+          placeholder="Enter text..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        ></textarea>
 
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 transition"
-          >
-            Logout
-          </button>
-        </div>
-      </nav>
+        <p className="text-gray-400 mt-2">
+          {text.length}/{MAX_CHARS}
+        </p>
 
-      {/* Centered main content */}
-      <div className="flex flex-col items-center w-full px-6 mt-16">
+        <button
+          onClick={handleConvert}
+          disabled={loading}
+          className="w-full bg-blue-600 py-4 rounded-xl mt-5 hover:bg-blue-700 disabled:bg-blue-800"
+        >
+          {loading ? "Converting..." : "Convert to Speech"}
+        </button>
 
-        <h2 className="text-4xl font-extrabold mb-8 text-center drop-shadow-lg">
-          Transform Text Into  
-          <span className="text-blue-400"> Human-like Speech</span>
-        </h2>
+        {error && <p className="text-red-400 mt-3">{error}</p>}
+        {success && <p className="text-green-400 mt-3">{success}</p>}
 
-        <div className="w-full max-w-3xl bg-white/10 backdrop-blur-2xl p-10 rounded-3xl border border-white/10 shadow-2xl">
+        {audioUrl && (
+          <div className="mt-6">
+            <audio
+              controls
+              src={audioUrl}
+              className="w-full rounded-lg"
+              onError={() => setAudioError(true)}
+            ></audio>
 
-          <label className="text-lg font-medium">Enter your text</label>
-
-          {/* Premium textarea */}
-          <textarea
-            className="w-full h-56 p-4 rounded-xl mt-3 bg-white/5 border border-white/20 focus:border-blue-400 transition shadow-inner"
-            placeholder="Type your prompt here..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          ></textarea>
-
-          <p className="text-gray-300 mt-2 text-right">{text.length}/{MAX_CHARS}</p>
-
-          {/* Premium convert button */}
-          <button
-            onClick={handleConvert}
-            disabled={loading}
-            className="w-full py-4 mt-6 rounded-xl text-lg font-semibold
-              bg-gradient-to-r from-blue-600 to-purple-600
-              hover:from-blue-500 hover:to-purple-500
-              transition-all shadow-lg hover:shadow-blue-500/30
-              disabled:opacity-50"
-          >
-            {loading ? "Processing..." : "Convert to Speech"}
-          </button>
-
-          {/* Toasts */}
-          {error && (
-            <p className="mt-4 text-red-400 text-sm animate-fade-in">
-              ❗ {error}
-            </p>
-          )}
-          {success && (
-            <p className="mt-4 text-green-400 text-sm animate-fade-in">
-              ✅ {success}
-            </p>
-          )}
-
-          {/* Audio section */}
-          {audioUrl && (
-            <div className="mt-10 bg-black/20 p-6 rounded-2xl border border-white/10 shadow-xl">
-              <p className="font-semibold text-lg mb-3">Your Audio</p>
-
-              <audio
-                controls
-                src={audioUrl}
-                className="w-full rounded-lg mb-4"
-              ></audio>
-
-              <a
-                href={audioUrl}
-                download
-                className="text-blue-400 hover:text-blue-300 underline"
-              >
-                Download Audio
-              </a>
-            </div>
-          )}
-        </div>
+            <a
+              href={audioUrl}
+              download
+              className="text-blue-400 underline mt-3 inline-block"
+            >
+              Download
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-
