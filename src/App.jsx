@@ -35,7 +35,8 @@ export default function App() {
     setAudioUrl("");
 
     try {
-      const res = await axios.post("https://tts-backend-7hh6.onrender.com/api/convert", {
+      const res = await axios.post(
+  `${import.meta.env.VITE_BACKEND_URL}/api/convert`, {
   text,
   user_id: user.id,
 });
